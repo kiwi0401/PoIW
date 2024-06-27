@@ -5,8 +5,10 @@ from constants import *
 import json
 
 
-def iterate_human_eval(split="test", batch_size=16):
-    dataset = load_dataset("openai_humaneval")
+def iterate_human_eval(data_dir, split="test", batch_size=16):
+    dataset = load_dataset(
+        data_dir + "datasets/openai_humaneval", trust_remote_code=True
+    )
     texts = [example["prompt"] for example in dataset[split]]
     for i in tqdm(range(0, len(texts), batch_size), desc="HumanEval"):
         yield texts[i : i + batch_size]

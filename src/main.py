@@ -75,7 +75,7 @@ if __name__ == "__main__":
         logging.info("generating output")
         output = []
         for query_texts in utils.iterate_human_eval(
-            split="test", batch_size=args.batch_size
+            args.data_dir, split="test", batch_size=args.batch_size
         ):
             sampled_tokens, sampled_token_ids, output_probs, output_prob_indices = (
                 model.generate_with_pow(
