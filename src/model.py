@@ -83,6 +83,7 @@ class Model(object):
         # get topk probability dist (proof of work)
         all_logits = torch.stack(outputs.scores, dim=1)
         output_probs = F.softmax(all_logits, dim=-1)
+        print(output_probs.shape)
         output_probs, output_prob_indices = torch.topk(
             output_probs, prob_dist_cutoff_k, dim=-1
         )
