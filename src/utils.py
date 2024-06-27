@@ -1,15 +1,20 @@
-from datasets import load_dataset
+import datasets
 from tqdm import tqdm
 import torch
 from constants import *
 import json
+import logging
 
 
 def iterate_human_eval(data_dir, split="test", batch_size=16):
-    dataset = load_dataset(
-        data_dir + "datasets/openai_humaneval", trust_remote_code=True
+    dataset = datasets.load_dataset(
+        data_dir + "datasets/openai_humaneval",
+        split=split,
+        streaming=True,
+        trust_remote_code=True,
     )
-    texts = [example["prompt"] for example in dataset[split]]
+    texts = [example["prompt"] for example in dataset]
+    logging.info("loaded dataset")
     for i in tqdm(range(0, len(texts), batch_size), desc="HumanEval"):
         yield texts[i : i + batch_size]
 
