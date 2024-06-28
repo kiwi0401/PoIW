@@ -10,8 +10,6 @@ def iterate_human_eval(data_dir, split="test", batch_size=16):
     dataset = datasets.load_dataset(
         data_dir + "datasets/openai_humaneval",
         split=split,
-        streaming=True,
-        trust_remote_code=True,
     )
     texts = [example["prompt"] for example in dataset]
     logging.info("loaded dataset")

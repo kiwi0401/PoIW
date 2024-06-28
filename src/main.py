@@ -3,6 +3,8 @@ import numpy as np
 import torch
 import argparse
 import json
+import os
+from dotenv import load_dotenv
 
 import model as m
 import utils
@@ -23,11 +25,18 @@ torch.manual_seed(1234)
 torch.cuda.manual_seed(1234)
 
 if __name__ == "__main__":
+    load_dotenv()  # load env vars from .env
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model", type=str, default="pythia-70m-deduped", help="model name"
     )
     parser.add_argument("--data-dir", type=str, default="data/", help="data directory")
+    parser.add_argument(
+        "--hf-cache-dir",
+        type=str,
+        default=os.environ.get("HF_HOME"),
+        help="huggingface cache directory",
+    )
     parser.add_argument(
         "--verifier-input",
         type=str,
@@ -69,13 +78,13 @@ if __name__ == "__main__":
         args.generate ^ args.verify
     ), "must set exactly one of generate and verify flags"
 
-    model = m.Model(args.data_dir + "llm_cache/" + args.model, device=DEVICE)
+    model = m.Model(args.hf_cache_dir + "llm_cache/" + args.model, device=DEVICE)
 
     if args.generate:
         logging.info("generating output")
         output = []
         for query_texts in utils.iterate_human_eval(
-            args.data_dir, split="test", batch_size=args.batch_size
+            args.hf_cache_dir, split="test", batch_size=args.batch_size
         ):
             sampled_tokens, sampled_token_ids, output_probs, output_prob_indices = (
                 model.generate_with_pow(
