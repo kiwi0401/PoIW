@@ -306,7 +306,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset",
         type=str,
-        default="anon8231489123/ShareGPT_Vicuna_unfiltered",
+        default="data/datasets/ShareGPT_V3_unfiltered_cleaned_split.json",
         help="Path to the dataset.",
     )
     parser.add_argument(
