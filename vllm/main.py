@@ -39,8 +39,7 @@ def main():
     args = parser.parse_args()
 
     model = LLM(
-        args.model,
-        download_dir=args.data_dir + "/llm_cache/",
+        args.data_dir + "/llm_cache/" + args.model,
         tensor_parallel_size=1,  # parallelize model weights to 1 gpu
     )
 
