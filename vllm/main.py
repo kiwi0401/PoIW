@@ -10,7 +10,7 @@ def main():
         "--model",
         "-m",
         type=str,
-        default="pythia-70m-deduped",
+        default="EleutherAI/pythia-70m-deduped",
         help="model name",
     )
     parser.add_argument(
@@ -39,7 +39,8 @@ def main():
     args = parser.parse_args()
 
     model = LLM(
-        args.data_dir + "/llm_cache/" + args.model,
+        args.model,
+        download_dir=args.data_dir + "/llm_cache/",
         tensor_parallel_size=1,  # parallelize model weights to 1 gpu
     )
 
