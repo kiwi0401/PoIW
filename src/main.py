@@ -32,7 +32,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--data-dir", type=str, default="data/", help="data directory")
     parser.add_argument(
-        "--hf-cache-dir",
+        "--hf-dataset-dir",
         type=str,
         default=os.environ.get("HF_HOME"),
         help="huggingface cache directory",
@@ -78,13 +78,13 @@ if __name__ == "__main__":
         args.generate ^ args.verify
     ), "must set exactly one of generate and verify flags"
 
-    model = m.Model(args.hf_cache_dir + "llm_cache/" + args.model, device=DEVICE)
+    model = m.Model(args.data_dir + "llm_cache/" + args.model, device=DEVICE)
 
     if args.generate:
         logging.info("generating output")
         output = []
         for query_texts in utils.iterate_human_eval(
-            args.hf_cache_dir, split="test", batch_size=args.batch_size
+            args.hf_dataset_dir, split="test", batch_size=args.batch_size
         ):
             sampled_tokens, sampled_token_ids, output_probs, output_prob_indices = (
                 model.generate_with_pow(
