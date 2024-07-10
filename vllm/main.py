@@ -1,28 +1,7 @@
 from vllm import LLM, SamplingParams
 from vllm.utils import FlexibleArgumentParser
 
-
-def to_json(responses):
-    outputs = []
-    for response in responses:
-        outputs.append(
-            {
-                "prompt": response.prompt,
-                "output": response.outputs[0].text,
-                "logprobs": [
-                    [
-                        {
-                            "logprob": logprob.logprob,
-                            "rank": logprob.rank,
-                            "decoded_token": logprob.decoded_token,
-                        }
-                        for logprob in logprobs
-                    ]
-                    for logprobs in response.outputs[0].logprobs
-                ],
-            }
-        )
-    return outputs
+from utils import to_json
 
 
 def main():
@@ -74,7 +53,6 @@ def main():
         logprobs=args.num_logprobs,
     )
     outputs = model.generate("Hello my name is", sampling_params=sampling_params)
-    # print(outputs[0].outputs[0].text)
     print(to_json(outputs))
 
 
