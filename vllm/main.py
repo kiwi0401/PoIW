@@ -10,12 +10,15 @@ def to_json(responses):
                 "prompt": response.prompt,
                 "output": response.outputs[0].text,
                 "logprobs": [
-                    {
-                        "logprob": logprob.logprob,
-                        "rank": logprob.rank,
-                        "decoded_token": logprob.decoded_token,
-                    }
-                    for logprob in response.outputs[0].logprobs.values()
+                    [
+                        {
+                            "logprob": logprob.logprob,
+                            "rank": logprob.rank,
+                            "decoded_token": logprob.decoded_token,
+                        }
+                        for logprob in logprobs
+                    ]
+                    for logprobs in response.outputs[0].logprobs
                 ],
             }
         )
