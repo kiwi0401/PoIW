@@ -15,7 +15,7 @@ def to_json(responses):
                         "rank": logprob.rank,
                         "decoded_token": logprob.decoded_token,
                     }
-                    for logprob in response.outputs[0].logprobs
+                    for logprob in response.outputs[0].logprobs.values()
                 ],
             }
         )
