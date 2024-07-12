@@ -93,7 +93,6 @@ def run_vllm(
 
     llm = LLM(
         model=model,
-        download_dir="data/llm_cache/",
         tokenizer=tokenizer,
         quantization=quantization,
         tensor_parallel_size=tensor_parallel_size,
