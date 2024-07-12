@@ -12,7 +12,7 @@ def main():
         "--model",
         "-m",
         type=str,
-        default="rubra-ai/Meta-Llama-3-8B-Instruct",
+        default="rubra-ai/Meta-Llama-3-8B-Instruct",  # astronomer/Llama-3-8B-Instruct-GPTQ-8-Bit
         help="model name",
     )
     parser.add_argument(

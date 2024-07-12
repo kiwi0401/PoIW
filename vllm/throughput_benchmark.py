@@ -122,17 +122,6 @@ def run_vllm(
     for i, request in enumerate(requests):
         prompt, _, output_len = request
         prompts.append(prompt)
-        # sampling_params.append(
-        #     SamplingParams(
-        #         n=n,
-        #         temperature=0.0 if use_beam_search else 1.0,
-        #         top_p=1.0,
-        #         use_beam_search=use_beam_search,
-        #         ignore_eos=True,
-        #         max_tokens=output_len,
-        #     )
-        # )
-
         sampling_params.append(
             SamplingParams(
                 n=n,
@@ -145,19 +134,21 @@ def run_vllm(
         )
 
         # batch 5 at a time
-        if len(prompts) == 5 or i == len(requests) - 1:
-            start = time.perf_counter()
-            llm.generate(prompts, sampling_params, use_tqdm=True)
-            end = time.perf_counter()
-            total_time += end - start
+        # if len(prompts) == 5 or i == len(requests) - 1:
+        #     start = time.perf_counter()
+        #     llm.generate(prompts, sampling_params, use_tqdm=True)
+        #     end = time.perf_counter()
+        #     total_time += end - start
 
-            prompts = []
-            sampling_params = []
+        #     prompts = []
+        #     sampling_params = []
 
-    # start = time.perf_counter()
-    # llm.generate(prompts, sampling_params, use_tqdm=True)
-    # end = time.perf_counter()
-    return total_time  # end - start
+    # return total_time  # end - start
+
+    start = time.perf_counter()
+    llm.generate(prompts, sampling_params, use_tqdm=True)
+    end = time.perf_counter()
+    return end - start
 
 
 def run_hf(
