@@ -119,7 +119,8 @@ def run_vllm(
 
     total_time = 0
 
-    for prompt, _, output_len in requests:
+    for i, request in enumerate(requests):
+        prompt, _, output_len = request
         prompts.append(prompt)
         # sampling_params.append(
         #     SamplingParams(
@@ -142,14 +143,14 @@ def run_vllm(
                 max_tokens=output_len,
             )
         )
-        start = time.perf_counter()
-        llm.generate(prompts, sampling_params, use_tqdm=True)
-        end = time.perf_counter()
-
-        total_time += end - start
 
         # batch 5 at a time
-        if len(prompts) == 5:
+        if len(prompts) == 5 or i == len(requests) - 1:
+            start = time.perf_counter()
+            llm.generate(prompts, sampling_params, use_tqdm=True)
+            end = time.perf_counter()
+            total_time += end - start
+
             prompts = []
             sampling_params = []
 
