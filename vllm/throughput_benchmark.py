@@ -143,7 +143,7 @@ def run_vllm(
             )
         )
         start = time.perf_counter()
-        llm.generate([prompt], sampling_params, use_tqdm=True)
+        llm.generate(prompts, sampling_params, use_tqdm=True)
         end = time.perf_counter()
 
         total_time += end - start
