@@ -119,7 +119,7 @@ def run_vllm(
 
     total_time = 0
 
-    for prompt, _, output_len in requests:
+    for prompt, _, output_len in tqdm(requests, desc="Processing prompts"):
         # prompts.append(prompt)
         # sampling_params.append(
         #     SamplingParams(
@@ -141,7 +141,7 @@ def run_vllm(
             max_tokens=output_len,
         )
         start = time.perf_counter()
-        llm.generate([prompt], [sampling_param], use_tqdm=True)
+        llm.generate([prompt], [sampling_param], use_tqdm=False)
         end = time.perf_counter()
 
         total_time += end - start

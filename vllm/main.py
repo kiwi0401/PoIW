@@ -12,7 +12,7 @@ def main():
         "--model",
         "-m",
         type=str,
-        default="EleutherAI/pythia-70m-deduped",
+        default="rubra-ai/Meta-Llama-3-8B-Instruct",
         help="model name",
     )
     parser.add_argument(
