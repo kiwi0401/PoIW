@@ -119,8 +119,8 @@ def run_vllm(
 
     total_time = 0
 
-    for prompt, _, output_len in tqdm(requests, desc="Processing prompts"):
-        # prompts.append(prompt)
+    for prompt, _, output_len in requests:
+        prompts.append(prompt)
         # sampling_params.append(
         #     SamplingParams(
         #         n=n,
@@ -132,19 +132,26 @@ def run_vllm(
         #     )
         # )
 
-        sampling_param = SamplingParams(
-            n=n,
-            temperature=0.0 if use_beam_search else 1.0,
-            top_p=1.0,
-            use_beam_search=use_beam_search,
-            ignore_eos=True,
-            max_tokens=output_len,
+        sampling_params.append(
+            SamplingParams(
+                n=n,
+                temperature=0.0 if use_beam_search else 1.0,
+                top_p=1.0,
+                use_beam_search=use_beam_search,
+                ignore_eos=True,
+                max_tokens=output_len,
+            )
         )
         start = time.perf_counter()
-        llm.generate([prompt], [sampling_param], use_tqdm=False)
+        llm.generate([prompt], sampling_params, use_tqdm=True)
         end = time.perf_counter()
 
         total_time += end - start
+
+        # batch 5 at a time
+        if len(prompts) == 5:
+            prompts = []
+            sampling_params = []
 
     # start = time.perf_counter()
     # llm.generate(prompts, sampling_params, use_tqdm=True)
