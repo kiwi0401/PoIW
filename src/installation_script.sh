@@ -7,6 +7,8 @@ rm -rf ~/miniconda3/miniconda.sh
 # initialize conda
 ~/miniconda3/bin/conda init bash
 ~/miniconda3/bin/conda init zsh
+source ~/.bashrc
+source ~/.zshrc
 
 # install vllm
 conda create --name vllm python=3.10
