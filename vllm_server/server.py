@@ -5,6 +5,10 @@ import re
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from typing import Optional, Set
+import os
+import dotenv
+
+dotenv.load_dotenv()  # take environment variables from .env.
 
 import fastapi
 import uvicorn
@@ -168,7 +172,7 @@ if __name__ == "__main__":
         allow_headers=args.allowed_headers,
     )
 
-    if tokens := envs.VLLM_API_KEYS.split(","):
+    if tokens := os.environ.get("VLLM_API_KEYS"):
 
         @app.middleware("http")
         async def authentication(request: Request, call_next):
@@ -178,7 +182,7 @@ if __name__ == "__main__":
             if not request.url.path.startswith(f"{root_path}/v1"):
                 return await call_next(request)
             if request.headers.get("Authorization") not in {
-                "Bearer " + token for token in tokens
+                "Bearer " + token for token in tokens.split(",")
             }:
                 return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
             return await call_next(request)
