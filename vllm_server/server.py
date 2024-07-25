@@ -15,14 +15,14 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from prometheus_client import make_asgi_app
 from starlette.routing import Mount
 
-import vllm_server.envs as envs
-from vllm_server.engine.arg_utils import AsyncEngineArgs
-from vllm_server.engine.async_llm_engine import AsyncLLMEngine
-from vllm_server.entrypoints.openai.cli_args import make_arg_parser
+import vllm.envs as envs
+from vllm.engine.arg_utils import AsyncEngineArgs
+from vllm.engine.async_llm_engine import AsyncLLMEngine
+from vllm.entrypoints.openai.cli_args import make_arg_parser
 
 # yapf conflicts with isort for this block
 # yapf: disable
-from vllm_server.entrypoints.openai.protocol import (ChatCompletionRequest,
+from vllm.entrypoints.openai.protocol import (ChatCompletionRequest,
                                               ChatCompletionResponse,
                                               CompletionRequest,
                                               DetokenizeRequest,
@@ -31,12 +31,12 @@ from vllm_server.entrypoints.openai.protocol import (ChatCompletionRequest,
                                               TokenizeRequest,
                                               TokenizeResponse)
 # yapf: enable
-from vllm_server.entrypoints.openai.serving_chat import OpenAIServingChat
-from vllm_server.entrypoints.openai.serving_completion import OpenAIServingCompletion
-from vllm_server.entrypoints.openai.serving_embedding import OpenAIServingEmbedding
-from vllm_server.logger import init_logger
-from vllm_server.usage.usage_lib import UsageContext
-from vllm_server.version import __version__ as VLLM_VERSION
+from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
+from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
+from vllm.entrypoints.openai.serving_embedding import OpenAIServingEmbedding
+from vllm.logger import init_logger
+from vllm.usage.usage_lib import UsageContext
+from vllm.version import __version__ as VLLM_VERSION
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
