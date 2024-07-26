@@ -1,5 +1,5 @@
-from vllm_server import LLM, SamplingParams
-from vllm_server.utils import FlexibleArgumentParser
+from vllm import LLM, SamplingParams
+from vllm.utils import FlexibleArgumentParser
 
 from utils import to_json
 

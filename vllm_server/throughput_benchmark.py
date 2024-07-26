@@ -89,7 +89,7 @@ def run_vllm(
     download_dir: Optional[str] = None,
     load_format: str = EngineArgs.load_format,
 ) -> float:
-    from vllm import LLM, SamplingParams
+    from vllm_server import LLM, SamplingParams
 
     llm = LLM(
         model=model,
