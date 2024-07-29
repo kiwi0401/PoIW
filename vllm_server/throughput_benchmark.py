@@ -14,6 +14,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenize
 from vllm.engine.arg_utils import EngineArgs
 from vllm.model_executor.layers.quantization import QUANTIZATION_METHODS
 from vllm.utils import FlexibleArgumentParser
+from vllm import LLM, SamplingParams
 
 
 def sample_requests(
@@ -89,7 +90,6 @@ def run_vllm(
     download_dir: Optional[str] = None,
     load_format: str = EngineArgs.load_format,
 ) -> float:
-    from vllm_server import LLM, SamplingParams
 
     llm = LLM(
         model=model,
