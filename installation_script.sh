@@ -13,7 +13,7 @@ source ~/.zshrc
 # install vllm
 conda create --name vllm python=3.10
 
-conda activate vllm && pip install vllm==v0.5.3.post1
+conda activate vllm && pip install vllm==0.5.3.post1
 
 # clone repo
 git clone https://github.com/Neehan/PoIW.git
