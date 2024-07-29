@@ -13,7 +13,7 @@ source ~/.zshrc
 # install vllm
 conda create --name vllm python=3.10
 
-conda activate vllm && pip install vllm==0.5.1
+conda activate vllm && pip install vllm==v0.5.3.post1
 
 # clone repo
 git clone https://github.com/Neehan/PoIW.git
@@ -36,4 +36,4 @@ python vllm/throughput_benchmark.py \
 
 
 # server 
-# python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8000 --download-dir data/llm_cache/ --model neuralmagic/Meta-Llama-3-70B-Instruct-FP8
+# python -m vllm_server.server --host 0.0.0.0 --port 8000 --download-dir data/llm_cache/ --model neuralmagic/Meta-Llama-3-70B-Instruct-FP8

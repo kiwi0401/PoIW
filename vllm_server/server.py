@@ -2,26 +2,22 @@ import asyncio
 import importlib
 import inspect
 import re
+from argparse import Namespace
 from contextlib import asynccontextmanager
 from http import HTTPStatus
-from typing import Optional, Set
-import os
-import dotenv
+from typing import Any, Optional, Set
 
-dotenv.load_dotenv()  # take environment variables from .env.
-
-import fastapi
-import uvicorn
-from fastapi import Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from prometheus_client import make_asgi_app
 from starlette.routing import Mount
 
-import vllm.envs as envs
+import os
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
+from vllm.entrypoints.logger import RequestLogger
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 
 # yapf conflicts with isort for this block
@@ -38,15 +34,21 @@ from vllm.entrypoints.openai.protocol import (ChatCompletionRequest,
 from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
 from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
 from vllm.entrypoints.openai.serving_embedding import OpenAIServingEmbedding
+from vllm.entrypoints.openai.serving_tokenization import OpenAIServingTokenization
 from vllm.logger import init_logger
+from vllm.server import serve_http
 from vllm.usage.usage_lib import UsageContext
+from vllm.utils import FlexibleArgumentParser
 from vllm.version import __version__ as VLLM_VERSION
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
+engine: AsyncLLMEngine
+engine_args: AsyncEngineArgs
 openai_serving_chat: OpenAIServingChat
 openai_serving_completion: OpenAIServingCompletion
 openai_serving_embedding: OpenAIServingEmbedding
+openai_serving_tokenization: OpenAIServingTokenization
 
 logger = init_logger("vllm.entrypoints.openai.api_server")
 
@@ -54,7 +56,7 @@ _running_tasks: Set[asyncio.Task] = set()
 
 
 @asynccontextmanager
-async def lifespan(app: fastapi.FastAPI):
+async def lifespan(app: FastAPI):
 
     async def _force_log():
         while True:
@@ -69,37 +71,27 @@ async def lifespan(app: fastapi.FastAPI):
     yield
 
 
-app = fastapi.FastAPI(lifespan=lifespan)
+router = APIRouter()
 
 
-def parse_args():
-    parser = make_arg_parser()
-    return parser.parse_args()
+def mount_metrics(app: FastAPI):
+    # Add prometheus asgi middleware to route /metrics requests
+    metrics_route = Mount("/metrics", make_asgi_app())
+    # Workaround for 307 Redirect for /metrics
+    metrics_route.path_regex = re.compile("^/metrics(?P<path>.*)$")
+    app.routes.append(metrics_route)
 
 
-# Add prometheus asgi middleware to route /metrics requests
-route = Mount("/metrics", make_asgi_app())
-# Workaround for 307 Redirect for /metrics
-route.path_regex = re.compile("^/metrics(?P<path>.*)$")
-app.routes.append(route)
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(_, exc):
-    err = openai_serving_chat.create_error_response(message=str(exc))
-    return JSONResponse(err.model_dump(), status_code=HTTPStatus.BAD_REQUEST)
-
-
-@app.get("/health")
+@router.get("/health")
 async def health() -> Response:
     """Health check."""
     await openai_serving_chat.engine.check_health()
     return Response(status_code=200)
 
 
-@app.post("/tokenize")
+@router.post("/tokenize")
 async def tokenize(request: TokenizeRequest):
-    generator = await openai_serving_completion.create_tokenize(request)
+    generator = await openai_serving_tokenization.create_tokenize(request)
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(), status_code=generator.code)
     else:
@@ -107,9 +99,9 @@ async def tokenize(request: TokenizeRequest):
         return JSONResponse(content=generator.model_dump())
 
 
-@app.post("/detokenize")
+@router.post("/detokenize")
 async def detokenize(request: DetokenizeRequest):
-    generator = await openai_serving_completion.create_detokenize(request)
+    generator = await openai_serving_tokenization.create_detokenize(request)
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(), status_code=generator.code)
     else:
@@ -117,19 +109,19 @@ async def detokenize(request: DetokenizeRequest):
         return JSONResponse(content=generator.model_dump())
 
 
-@app.get("/v1/models")
+@router.get("/v1/models")
 async def show_available_models():
-    models = await openai_serving_chat.show_available_models()
+    models = await openai_serving_completion.show_available_models()
     return JSONResponse(content=models.model_dump())
 
 
-@app.get("/version")
+@router.get("/version")
 async def show_version():
     ver = {"version": VLLM_VERSION}
     return JSONResponse(content=ver)
 
 
-@app.post("/v1/chat/completions")
+@router.post("/v1/chat/completions")
 async def create_chat_completion(request: ChatCompletionRequest, raw_request: Request):
     generator = await openai_serving_chat.create_chat_completion(request, raw_request)
     if isinstance(generator, ErrorResponse):
@@ -141,7 +133,7 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
         return JSONResponse(content=generator.model_dump())
 
 
-@app.post("/v1/completions")
+@router.post("/v1/completions")
 async def create_completion(request: CompletionRequest, raw_request: Request):
     generator = await openai_serving_completion.create_completion(request, raw_request)
     if isinstance(generator, ErrorResponse):
@@ -152,7 +144,7 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
         return JSONResponse(content=generator.model_dump())
 
 
-@app.post("/v1/embeddings")
+@router.post("/v1/embeddings")
 async def create_embedding(request: EmbeddingRequest, raw_request: Request):
     generator = await openai_serving_embedding.create_embedding(request, raw_request)
     if isinstance(generator, ErrorResponse):
@@ -161,8 +153,12 @@ async def create_embedding(request: EmbeddingRequest, raw_request: Request):
         return JSONResponse(content=generator.model_dump())
 
 
-if __name__ == "__main__":
-    args = parse_args()
+def build_app(args: Namespace) -> FastAPI:
+    app = FastAPI(lifespan=lifespan)
+    app.include_router(router)
+    app.root_path = args.root_path
+
+    mount_metrics(app)
 
     app.add_middleware(
         CORSMiddleware,
@@ -171,6 +167,11 @@ if __name__ == "__main__":
         allow_methods=args.allowed_methods,
         allow_headers=args.allowed_headers,
     )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(_, exc):
+        err = openai_serving_chat.create_error_response(message=str(exc))
+        return JSONResponse(err.model_dump(), status_code=HTTPStatus.BAD_REQUEST)
 
     if tokens := os.environ.get("VLLM_API_KEYS"):
 
@@ -199,50 +200,89 @@ if __name__ == "__main__":
                 f"Invalid middleware {middleware}. " f"Must be a function or a class."
             )
 
-    logger.info("vLLM API server version %s", VLLM_VERSION)
-    logger.info("args: %s", args)
+    return app
+
+
+async def init_app(
+    args: Namespace, llm_engine: Optional[AsyncLLMEngine] = None
+) -> FastAPI:
+    app = build_app(args)
 
     if args.served_model_name is not None:
         served_model_names = args.served_model_name
     else:
         served_model_names = [args.model]
 
-    engine_args = AsyncEngineArgs.from_cli_args(args)
+    global engine, engine_args
 
-    engine = AsyncLLMEngine.from_engine_args(
-        engine_args, usage_context=UsageContext.OPENAI_API_SERVER
+    engine_args = AsyncEngineArgs.from_cli_args(args)
+    engine = (
+        llm_engine
+        if llm_engine is not None
+        else AsyncLLMEngine.from_engine_args(
+            engine_args, usage_context=UsageContext.OPENAI_API_SERVER
+        )
     )
 
-    event_loop: Optional[asyncio.AbstractEventLoop]
-    try:
-        event_loop = asyncio.get_running_loop()
-    except RuntimeError:
-        event_loop = None
+    model_config = await engine.get_model_config()
 
-    if event_loop is not None and event_loop.is_running():
-        # If the current is instanced by Ray Serve,
-        # there is already a running event loop
-        model_config = event_loop.run_until_complete(engine.get_model_config())
+    if args.disable_log_requests:
+        request_logger = None
     else:
-        # When using single vLLM without engine_use_ray
-        model_config = asyncio.run(engine.get_model_config())
+        request_logger = RequestLogger(max_log_len=args.max_log_len)
+
+    global openai_serving_chat
+    global openai_serving_completion
+    global openai_serving_embedding
+    global openai_serving_tokenization
 
     openai_serving_chat = OpenAIServingChat(
         engine,
         model_config,
         served_model_names,
         args.response_role,
-        args.lora_modules,
-        args.chat_template,
+        lora_modules=args.lora_modules,
+        prompt_adapters=args.prompt_adapters,
+        request_logger=request_logger,
+        chat_template=args.chat_template,
+        return_tokens_as_token_ids=args.return_tokens_as_token_ids,
     )
     openai_serving_completion = OpenAIServingCompletion(
-        engine, model_config, served_model_names, args.lora_modules
+        engine,
+        model_config,
+        served_model_names,
+        lora_modules=args.lora_modules,
+        prompt_adapters=args.prompt_adapters,
+        request_logger=request_logger,
+        return_tokens_as_token_ids=args.return_tokens_as_token_ids,
     )
     openai_serving_embedding = OpenAIServingEmbedding(
-        engine, model_config, served_model_names
+        engine,
+        model_config,
+        served_model_names,
+        request_logger=request_logger,
+    )
+    openai_serving_tokenization = OpenAIServingTokenization(
+        engine,
+        model_config,
+        served_model_names,
+        lora_modules=args.lora_modules,
+        request_logger=request_logger,
+        chat_template=args.chat_template,
     )
     app.root_path = args.root_path
-    uvicorn.run(
+
+    return app
+
+
+async def run_server(
+    args: Namespace, llm_engine: Optional[AsyncLLMEngine] = None, **uvicorn_kwargs: Any
+) -> None:
+    logger.info("vLLM API server version %s", VLLM_VERSION)
+    logger.info("args: %s", args)
+
+    app = await init_app(args, llm_engine)
+    await serve_http(
         app,
         host=args.host,
         port=args.port,
@@ -252,4 +292,17 @@ if __name__ == "__main__":
         ssl_certfile=args.ssl_certfile,
         ssl_ca_certs=args.ssl_ca_certs,
         ssl_cert_reqs=args.ssl_cert_reqs,
+        **uvicorn_kwargs,
     )
+
+
+if __name__ == "__main__":
+    # NOTE(simon):
+    # This section should be in sync with vllm/scripts.py for CLI entrypoints.
+    parser = FlexibleArgumentParser(
+        description="vLLM OpenAI-Compatible RESTful API server."
+    )
+    parser = make_arg_parser(parser)
+    args = parser.parse_args()
+
+    asyncio.run(run_server(args))
