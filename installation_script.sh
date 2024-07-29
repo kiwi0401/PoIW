@@ -36,4 +36,4 @@ python vllm/throughput_benchmark.py \
 
 
 # server 
-# python -m vllm_server.server --host 0.0.0.0 --port 8000 --download-dir data/llm_cache/ --model neuralmagic/Meta-Llama-3-70B-Instruct-FP8
+# python -m vllm_server.server --host 127.0.0.1 --port 9000 --download-dir data/llm_cache/ --model neuralmagic/Meta-Llama-3-70B-Instruct-FP8
