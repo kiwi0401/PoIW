@@ -3,25 +3,34 @@
 """Benchmark offline inference throughput."""
 import argparse
 import json
+import os
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional, Tuple
 
+import tensorrt_llm
 import torch
+from huggingface_hub import login
+from tensorrt_llm._utils import release_gc
+from tensorrt_llm.bindings.executor import Executor, Request, SamplingConfig
+from tensorrt_llm.bindings.executor import ModelType, ExecutorConfig  # Ensure correct import
+from tensorrt_llm.mapping import Mapping
+from tensorrt_llm.models import LLaMAForCausalLM
+from tensorrt_llm.models.llama.convert import load_hf_llama
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizerBase
-
+from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizerBase, AutoConfig
+from vllm import LLM, SamplingParams
 from vllm.engine.arg_utils import EngineArgs
 from vllm.model_executor.layers.quantization import QUANTIZATION_METHODS
 from vllm.utils import FlexibleArgumentParser
-from vllm import LLM, SamplingParams
 
 
 def sample_requests(
-    dataset_path: str,
-    num_requests: int,
-    tokenizer: PreTrainedTokenizerBase,
-    fixed_output_len: Optional[int],
+        dataset_path: str,
+        num_requests: int,
+        tokenizer: PreTrainedTokenizerBase,
+        fixed_output_len: Optional[int],
 ) -> List[Tuple[str, int, int]]:
     if fixed_output_len is not None and fixed_output_len < 4:
         raise ValueError("output_len too small")
@@ -67,30 +76,29 @@ def sample_requests(
 
 
 def run_vllm(
-    requests: List[Tuple[str, int, int]],
-    model: str,
-    tokenizer: str,
-    quantization: Optional[str],
-    tensor_parallel_size: int,
-    seed: int,
-    n: int,
-    use_beam_search: bool,
-    trust_remote_code: bool,
-    dtype: str,
-    max_model_len: Optional[int],
-    enforce_eager: bool,
-    kv_cache_dtype: str,
-    quantization_param_path: Optional[str],
-    device: str,
-    enable_prefix_caching: bool,
-    enable_chunked_prefill: bool,
-    max_num_batched_tokens: int,
-    distributed_executor_backend: Optional[str],
-    gpu_memory_utilization: float = 0.9,
-    download_dir: Optional[str] = None,
-    load_format: str = EngineArgs.load_format,
+        requests: List[Tuple[str, int, int]],
+        model: str,
+        tokenizer: str,
+        quantization: Optional[str],
+        tensor_parallel_size: int,
+        seed: int,
+        n: int,
+        use_beam_search: bool,
+        trust_remote_code: bool,
+        dtype: str,
+        max_model_len: Optional[int],
+        enforce_eager: bool,
+        kv_cache_dtype: str,
+        quantization_param_path: Optional[str],
+        device: str,
+        enable_prefix_caching: bool,
+        enable_chunked_prefill: bool,
+        max_num_batched_tokens: int,
+        distributed_executor_backend: Optional[str],
+        gpu_memory_utilization: float = 0.9,
+        download_dir: Optional[str] = None,
+        load_format: str = EngineArgs.load_format,
 ) -> float:
-
     llm = LLM(
         model=model,
         tokenizer=tokenizer,
@@ -152,13 +160,13 @@ def run_vllm(
 
 
 def run_hf(
-    requests: List[Tuple[str, int, int]],
-    model: str,
-    tokenizer: PreTrainedTokenizerBase,
-    n: int,
-    use_beam_search: bool,
-    max_batch_size: int,
-    trust_remote_code: bool,
+        requests: List[Tuple[str, int, int]],
+        model: str,
+        tokenizer: PreTrainedTokenizerBase,
+        n: int,
+        use_beam_search: bool,
+        max_batch_size: int,
+        trust_remote_code: bool,
 ) -> float:
     assert not use_beam_search
     llm = AutoModelForCausalLM.from_pretrained(
@@ -184,8 +192,8 @@ def run_hf(
             # Check if we can add more requests to the batch.
             _, next_prompt_len, next_output_len = requests[i + 1]
             if (
-                max(max_prompt_len, next_prompt_len)
-                + max(max_output_len, next_output_len)
+                    max(max_prompt_len, next_prompt_len)
+                    + max(max_output_len, next_output_len)
             ) <= 2048:
                 # We can add more requests to the batch.
                 continue
@@ -214,10 +222,10 @@ def run_hf(
 
 
 def run_mii(
-    requests: List[Tuple[str, int, int]],
-    model: str,
-    tensor_parallel_size: int,
-    output_len: int,
+        requests: List[Tuple[str, int, int]],
+        model: str,
+        tensor_parallel_size: int,
+        output_len: int,
 ) -> float:
     from mii import client, serve
 
@@ -229,6 +237,133 @@ def run_mii(
     end = time.perf_counter()
     client = client(model)
     client.terminate_server()
+    return end - start
+
+
+def build_engine(output_dir, max_batch_size):
+    from tensorrt_llm import BuildConfig
+    from tensorrt_llm.models import LLaMAForCausalLM
+
+    print("Starting TensorRTLLM engine build...")
+
+    llama = LLaMAForCausalLM.from_checkpoint(output_dir)
+    build_config = BuildConfig(max_batch_size=max_batch_size)
+    engine = tensorrt_llm.build(llama, build_config)
+    engine.save(os.path.join(output_dir, "engine.trt"))
+
+    print("Engine build completed.")
+
+    return engine
+
+
+def convert_hf_model_to_trtllm(model_dir, output_dir, dtype, load_model_on_cpu, load_by_shard, tp_size, pp_size):
+    print("Starting model conversion...")
+
+    world_size = tp_size * pp_size
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    try:
+        hf_config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+    except:
+        print("AutoConfig cannot load the Hugging Face config.")
+
+    hf_model = load_hf_llama(model_dir, load_model_on_cpu)
+
+    def convert_and_save_rank(rank):
+        mapping = Mapping(
+            world_size=world_size,
+            rank=rank,
+            tp_size=tp_size,
+            pp_size=pp_size,
+            moe_tp_size=1,
+            moe_ep_size=1
+        )
+        llama = LLaMAForCausalLM.from_hugging_face(
+            model_dir if hf_model is None else hf_model,
+            dtype,
+            mapping=mapping,
+            quant_config=None,
+            load_by_shard=load_by_shard,
+        )
+        llama.save_checkpoint(output_dir, save_config=(rank == 0))
+        del llama
+
+    with ThreadPoolExecutor(max_workers=world_size) as executor:
+        futures = [executor.submit(convert_and_save_rank, rank) for rank in range(world_size)]
+        for future in as_completed(futures):
+            future.result()
+    release_gc()
+
+    print("Model conversion completed.")
+
+
+def run_trtllm(requests, output_len, model_dir, trt_output_dir, dtype):
+    # Login for closed models
+    hf_token = os.getenv("HUGGINGFACE_TOKEN")
+    if not hf_token:
+        print("HUGGINGFACE_TOKEN environment variable not set")
+        raise ValueError("HUGGINGFACE_TOKEN environment variable not set")
+    login(hf_token)
+
+    # Convert the model and empty vcache to make space for optimized model
+    convert_hf_model_to_trtllm(model_dir, trt_output_dir, dtype, False, False, 1, 1)
+    torch.cuda.empty_cache()
+
+    # Build engine & Tokenizer
+    engine = build_engine(trt_output_dir, args.batch_size)
+    tokenizer = AutoTokenizer.from_pretrained(model_dir)
+
+    # Create executor and load model to GPU
+    executor = Executor(model_path=os.path.join(trt_output_dir, "engine.trt"), model_type=ModelType.DECODER_ONLY,
+                        executor_config=ExecutorConfig())
+    print("Executor initialized.")
+
+    prompts = [prompt for prompt, _, _ in requests]
+    start = time.perf_counter()
+    results = []
+    requests = []
+    total_responses = 0
+    # Create and enqueue requests
+    for i, prompt in enumerate(prompts):
+        input_ids = tokenizer(prompt, return_tensors='pt').input_ids[0].tolist()
+        sampling_config = SamplingConfig()
+        request = Request(input_token_ids=input_ids, max_new_tokens=output_len, streaming=False,
+                          sampling_config=sampling_config)
+        requests.append(request)
+
+        batch_size = 100  # Number of requests to process at a time
+        batch_counter = 0
+        responses_received = 0
+        if len(requests) >= batch_size:
+            print("EXECUTING REQUESTS")
+            print(len(requests))
+            executor.enqueue_requests(requests)
+
+            # Wait for responses
+
+            while responses_received < batch_size:
+                responses = executor.await_responses()
+                for response in responses:
+                    if response.has_error():
+                        print(f"Error in response {response.request_id}: {response.error_msg}")
+                    else:
+                        print("NUM RESPONSES")
+                        print(total_responses)
+                        print("-" * 80)
+                    responses_received += 1
+                    total_responses += 1
+
+            requests = []
+            batch_counter += 1
+
+    end = time.perf_counter()
+
+    executor.shutdown()
+
+    print("Inference completed.")
+
     return end - start
 
 
@@ -291,6 +426,10 @@ def main(args: argparse.Namespace):
         elapsed_time = run_mii(
             requests, args.model, args.tensor_parallel_size, args.output_len
         )
+    elif args.backend == "tensorrt":
+        elapsed_time = run_trtllm(
+            requests, args.output_len, args.model, args.engine_dir, args.dtype
+        )
     else:
         raise ValueError(f"Unknown backend: {args.backend}")
     total_num_tokens = sum(
@@ -317,7 +456,7 @@ def main(args: argparse.Namespace):
 if __name__ == "__main__":
     parser = FlexibleArgumentParser(description="Benchmark the throughput.")
     parser.add_argument(
-        "--backend", type=str, choices=["vllm", "hf", "mii"], default="vllm"
+        "--backend", type=str, choices=["vllm", "hf", "mii", "tensorrt"], default="vllm"
     )
     parser.add_argument(
         "--dataset",
@@ -336,7 +475,7 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Output length for each request. Overrides the "
-        "output length from the dataset.",
+             "output length from the dataset.",
     )
     parser.add_argument("--model", type=str, default="EleutherAI/pythia-70m-deduped")
     parser.add_argument("--tokenizer", type=str, default=None)
@@ -368,7 +507,7 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Maximum length of a sequence (including prompt and output). "
-        "If None, will be derived from the model.",
+             "If None, will be derived from the model.",
     )
     parser.add_argument(
         "--dtype",
@@ -376,17 +515,17 @@ if __name__ == "__main__":
         default="auto",
         choices=["auto", "half", "float16", "bfloat16", "float", "float32"],
         help="data type for model weights and activations. "
-        'The "auto" option will use FP16 precision '
-        "for FP32 and FP16 models, and BF16 precision "
-        "for BF16 models.",
+             'The "auto" option will use FP16 precision '
+             "for FP32 and FP16 models, and BF16 precision "
+             "for BF16 models.",
     )
     parser.add_argument(
         "--gpu-memory-utilization",
         type=float,
         default=0.9,
         help="the fraction of GPU memory to be used for "
-        "the model executor, which can range from 0 to 1."
-        "If unspecified, will use the default value of 0.9.",
+             "the model executor, which can range from 0 to 1."
+             "If unspecified, will use the default value of 0.9.",
     )
     parser.add_argument(
         "--enforce-eager", action="store_true", help="enforce eager execution"
@@ -397,19 +536,19 @@ if __name__ == "__main__":
         choices=["auto", "fp8", "fp8_e5m2", "fp8_e4m3"],
         default="auto",
         help='Data type for kv cache storage. If "auto", will use model '
-        "data type. CUDA 11.8+ supports fp8 (=fp8_e4m3) and fp8_e5m2. "
-        "ROCm (AMD GPU) supports fp8 (=fp8_e4m3)",
+             "data type. CUDA 11.8+ supports fp8 (=fp8_e4m3) and fp8_e5m2. "
+             "ROCm (AMD GPU) supports fp8 (=fp8_e4m3)",
     )
     parser.add_argument(
         "--quantization-param-path",
         type=str,
         default=None,
         help="Path to the JSON file containing the KV cache scaling factors. "
-        "This should generally be supplied, when KV cache dtype is FP8. "
-        "Otherwise, KV cache scaling factors default to 1.0, which may cause "
-        "accuracy issues. FP8_E5M2 (without scaling) is only supported on "
-        "cuda version greater than 11.8. On ROCm (AMD GPU), FP8_E4M3 is "
-        "instead supported for common inference criteria.",
+             "This should generally be supplied, when KV cache dtype is FP8. "
+             "Otherwise, KV cache scaling factors default to 1.0, which may cause "
+             "accuracy issues. FP8_E5M2 (without scaling) is only supported on "
+             "cuda version greater than 11.8. On ROCm (AMD GPU), FP8_E4M3 is "
+             "instead supported for common inference criteria.",
     )
     parser.add_argument(
         "--device",
@@ -439,7 +578,7 @@ if __name__ == "__main__":
         type=str,
         default="data/llm_cache/",
         help="directory to download and load the weights, "
-        "default to the default cache dir of huggingface",
+             "default to the default cache dir of huggingface",
     )
     parser.add_argument(
         "--output-json",
@@ -447,13 +586,14 @@ if __name__ == "__main__":
         default=None,
         help="Path to save the throughput results in JSON format.",
     )
+    parser.add_argument('--engine_dir', type=str, default='/code/tensorrt_llm/mistral_trtllm/llama_style_merge_long_v2',help="Path to the TensorRT Engine directory.")
     parser.add_argument(
         "--distributed-executor-backend",
         choices=["ray", "mp"],
         default=None,
         help="Backend to use for distributed serving. When more than 1 GPU "
-        'is used, will be automatically set to "ray" if installed '
-        'or "mp" (multiprocessing) otherwise.',
+             'is used, will be automatically set to "ray" if installed '
+             'or "mp" (multiprocessing) otherwise.',
     )
     parser.add_argument(
         "--load-format",
@@ -469,20 +609,20 @@ if __name__ == "__main__":
             "bitsandbytes",
         ],
         help="The format of the model weights to load.\n\n"
-        '* "auto" will try to load the weights in the safetensors format '
-        "and fall back to the pytorch bin format if safetensors format "
-        "is not available.\n"
-        '* "pt" will load the weights in the pytorch bin format.\n'
-        '* "safetensors" will load the weights in the safetensors format.\n'
-        '* "npcache" will load the weights in pytorch format and store '
-        "a numpy cache to speed up the loading.\n"
-        '* "dummy" will initialize the weights with random values, '
-        "which is mainly for profiling.\n"
-        '* "tensorizer" will load the weights using tensorizer from '
-        "CoreWeave. See the Tensorize vLLM Model script in the Examples"
-        "section for more information.\n"
-        '* "bitsandbytes" will load the weights using bitsandbytes '
-        "quantization.\n",
+             '* "auto" will try to load the weights in the safetensors format '
+             "and fall back to the pytorch bin format if safetensors format "
+             "is not available.\n"
+             '* "pt" will load the weights in the pytorch bin format.\n'
+             '* "safetensors" will load the weights in the safetensors format.\n'
+             '* "npcache" will load the weights in pytorch format and store '
+             "a numpy cache to speed up the loading.\n"
+             '* "dummy" will initialize the weights with random values, '
+             "which is mainly for profiling.\n"
+             '* "tensorizer" will load the weights using tensorizer from '
+             "CoreWeave. See the Tensorize vLLM Model script in the Examples"
+             "section for more information.\n"
+             '* "bitsandbytes" will load the weights using bitsandbytes '
+             "quantization.\n",
     )
     args = parser.parse_args()
     if args.tokenizer is None:
