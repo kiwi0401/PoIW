@@ -142,21 +142,22 @@ def run_vllm(
         )
 
         # batch 5 at a time
-        # if len(prompts) == 5 or i == len(requests) - 1:
-        #     start = time.perf_counter()
-        #     llm.generate(prompts, sampling_params, use_tqdm=True)
-        #     end = time.perf_counter()
-        #     total_time += end - start
+        if len(prompts) == 10 or i == len(requests) - 1:
+            start = time.perf_counter()
+            llm.generate(prompts, sampling_params, use_tqdm=True)
+            print(f"Batch {i // 10 + 1} / {len(requests) // 10}")
+            end = time.perf_counter()
+            total_time += end - start
 
-        #     prompts = []
-        #     sampling_params = []
+            prompts = []
+            sampling_params = []
 
-    # return total_time  # end - start
+    return total_time  # end - start
 
-    start = time.perf_counter()
-    llm.generate(prompts, sampling_params, use_tqdm=True)
-    end = time.perf_counter()
-    return end - start
+    # start = time.perf_counter()
+    # llm.generate(prompts, sampling_params, use_tqdm=True)
+    # end = time.perf_counter()
+    # return end - start
 
 
 def run_hf(
