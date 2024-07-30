@@ -119,7 +119,7 @@ def run_vllm(
         max_num_batched_tokens=max_num_batched_tokens,
         distributed_executor_backend=distributed_executor_backend,
         load_format=load_format,
-        max_num_seqs=10,
+        max_num_seqs=1,
     )
 
     # Add the requests to the engine.
@@ -310,7 +310,7 @@ def run_trtllm(requests, model_dir, trt_output_dir, dtype, batch_size):
     login(hf_token)
 
     # Convert the model and empty vcache to make space for optimized model
-    convert_hf_model_to_trtllm(model_dir, trt_output_dir, dtype, False, False, 1, 1)
+    convert_hf_model_to_trtllm(model_dir, trt_output_dir, dtype, False, False, 0, 0)
     torch.cuda.empty_cache()
 
     # Build engine & Tokenizer
