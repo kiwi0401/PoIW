@@ -247,7 +247,7 @@ def build_engine(output_dir, max_batch_size):
     print("Starting TensorRTLLM engine build...")
 
     llama = LLaMAForCausalLM.from_checkpoint(output_dir)
-    build_config = BuildConfig(max_batch_size=max_batch_size, max_input_len=1024)
+    build_config = BuildConfig(max_batch_size=max_batch_size, max_input_len=1024, max_seq_len=2048)
     engine = tensorrt_llm.build(llama, build_config)
     engine.save(os.path.join(output_dir, "engine.trt"))
 
