@@ -329,8 +329,7 @@ def run_trtllm(requests, model_dir, trt_output_dir, dtype, batch_size):
     for i, prompt in enumerate(prompts):
         input_ids = tokenizer(prompt, return_tensors='pt').input_ids[0].tolist()
         sampling_config = SamplingConfig()
-        request = Request(input_token_ids=input_ids, streaming=False,
-                          sampling_config=sampling_config)
+        request = Request(input_token_ids=input_ids,streaming=False, sampling_config=sampling_config, max_new_tokens=2048)
         requests.append(request)
 
         request_amount = 10  # Number of requests to process at a time
