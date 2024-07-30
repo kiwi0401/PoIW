@@ -299,7 +299,7 @@ def convert_hf_model_to_trtllm(model_dir, output_dir, dtype, load_model_on_cpu, 
     print("Model conversion completed.")
 
 
-def run_trtllm(requests, output_len, model_dir, trt_output_dir, dtype):
+def run_trtllm(requests, model_dir, trt_output_dir, dtype):
     # Login for closed models
     hf_token = os.getenv("HUGGINGFACE_TOKEN")
     if not hf_token:
@@ -329,7 +329,7 @@ def run_trtllm(requests, output_len, model_dir, trt_output_dir, dtype):
     for i, prompt in enumerate(prompts):
         input_ids = tokenizer(prompt, return_tensors='pt').input_ids[0].tolist()
         sampling_config = SamplingConfig()
-        request = Request(input_token_ids=input_ids, max_new_tokens=output_len, streaming=False,
+        request = Request(input_token_ids=input_ids, streaming=False,
                           sampling_config=sampling_config)
         requests.append(request)
 
@@ -428,7 +428,7 @@ def main(args: argparse.Namespace):
         )
     elif args.backend == "tensorrt":
         elapsed_time = run_trtllm(
-            requests, args.output_len, args.model, args.engine_dir, args.dtype
+            requests, args.model, args.engine_dir, args.dtype
         )
     else:
         raise ValueError(f"Unknown backend: {args.backend}")
