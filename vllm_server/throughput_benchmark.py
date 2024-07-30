@@ -299,7 +299,7 @@ def convert_hf_model_to_trtllm(model_dir, output_dir, dtype, load_model_on_cpu, 
     print("Model conversion completed.")
 
 
-def run_trtllm(requests, model_dir, trt_output_dir, dtype):
+def run_trtllm(requests, model_dir, trt_output_dir, dtype, batch_size):
     # Login for closed models
     hf_token = os.getenv("HUGGINGFACE_TOKEN")
     if not hf_token:
@@ -312,7 +312,7 @@ def run_trtllm(requests, model_dir, trt_output_dir, dtype):
     torch.cuda.empty_cache()
 
     # Build engine & Tokenizer
-    engine = build_engine(trt_output_dir, args.batch_size)
+    engine = build_engine(trt_output_dir, batch_size)
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
 
     # Create executor and load model to GPU
@@ -428,7 +428,7 @@ def main(args: argparse.Namespace):
         )
     elif args.backend == "tensorrt":
         elapsed_time = run_trtllm(
-            requests, args.model, args.engine_dir, args.dtype
+            requests, args.model, args.engine_dir, args.dtype, args.tllm_max_batch_size
         )
     else:
         raise ValueError(f"Unknown backend: {args.backend}")
@@ -496,6 +496,12 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Maximum batch size for HF backend.",
+    )
+    parser.add_argument(
+        "--tllm-max-batch-size",
+        type=int,
+        default=1,
+        help="Maximum batch size for TLLM backend.",
     )
     parser.add_argument(
         "--trust-remote-code",
