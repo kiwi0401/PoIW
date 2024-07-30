@@ -333,17 +333,17 @@ def run_trtllm(requests, output_len, model_dir, trt_output_dir, dtype):
                           sampling_config=sampling_config)
         requests.append(request)
 
-        batch_size = 100  # Number of requests to process at a time
+        request_amount = 10  # Number of requests to process at a time
         batch_counter = 0
         responses_received = 0
-        if len(requests) >= batch_size:
+        if len(requests) >= request_amount:
             print("EXECUTING REQUESTS")
             print(len(requests))
             executor.enqueue_requests(requests)
 
             # Wait for responses
 
-            while responses_received < batch_size:
+            while responses_received < request_amount:
                 responses = executor.await_responses()
                 for response in responses:
                     if response.has_error():
