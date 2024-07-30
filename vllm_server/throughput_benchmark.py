@@ -119,7 +119,7 @@ def run_vllm(
         max_num_batched_tokens=max_num_batched_tokens,
         distributed_executor_backend=distributed_executor_backend,
         load_format=load_format,
-        max_num_seq=1,
+        # max_num_seq=1,
     )
 
     # Add the requests to the engine.
